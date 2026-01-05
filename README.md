@@ -1,7 +1,7 @@
-# IEEE-CIS Fraud Detection: Time-Invariant Client Identification
+# IEEE-CIS Fraud Detection: Precise Client Identification vs. Synthetic Over-sampling
 
 This repository contains the code and experiments for the paper:
-**"Time-Invariant Client Identification for Fraud Detection: A Feature Engineering Approach"**
+**"Precise Client Identification vs. Synthetic Over-sampling: Re-evaluating Feature Engineering in Fraud Detection"**
 
 ## 🚀 Quick Start
 
