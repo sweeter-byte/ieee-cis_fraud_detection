@@ -1,5 +1,5 @@
 \documentclass[conference]{IEEEtran}
-\usepackage[T1]{fontenc}  % Fix < and > symbols rendering
+\usepackage[T1]{fontenc}  
 \usepackage{cite}
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage[ruled,linesnumbered,vlined]{algorithm2e}
@@ -33,17 +33,23 @@
 
 \title{Precise Client Identification vs. Synthetic Over-sampling: Re-evaluating Feature Engineering in Fraud Detection}
 
-\author{\IEEEauthorblockN{Anonymous Author}
+\author{\IEEEauthorblockN{Maoyin Ran}
 \IEEEauthorblockA{\textit{Department of Computer Science} \\
-\textit{University of Nowhere}\\
-City, Country \\
-email@example.com}
+\textit{Nanjing University of Aeronautics and Astronautics}\\
+Nanjing, China \\
+ranmy.cs@nuaa.edu.cn}
 }
 
 \maketitle
 
 \begin{abstract}
-Fraud detection in online transaction systems poses unique challenges due to extreme class imbalance, high dimensionality, and non-stationary distribution shifts. While academic methodologies often prioritize synthetic data augmentation (e.g., SMOTE) or complex ensemble architectures, these approaches can introduce noise and incur substantial computational overhead without commensurate performance gains. In this paper, we propose a paradigm shift from model complexity to precise \textbf{Feature Engineering}, specifically targeting the re-identification of clients across transactions. We introduce a novel \textbf{Time-Invariant Client Identification} method based on the transformation $D_1^{(\text{inv})} = \text{Day}(t) - D_1$, which corrects for temporal drift in user registration attributes and enables consistent transaction grouping. Extensive experiments on the IEEE-CIS Fraud Detection dataset ($N=590,540$) demonstrate that our feature-centric approach using a single LightGBM model achieves an AUC of \textbf{0.932}, significantly outperforming SMOTE-augmented baselines (AUC=0.908) and matching recent ensemble stacking methods (AUC$\approx$0.918) with $45\times$ faster training. A comprehensive ablation study reveals that applying SMOTE to our well-engineered feature space yields only marginal improvement (+0.25\% AUC) while increasing training time by $5\times$---an unfavorable trade-off for production systems requiring frequent model updates. These findings challenge the assumption that synthetic oversampling is universally beneficial and demonstrate that high-quality semantic feature extraction can render such techniques cost-ineffective.
+Fraud detection in online transaction systems poses unique challenges due to extreme class imbalance, high dimensionality, and non-stationary distribution shifts. 
+While academic methodologies often prioritize synthetic data augmentation (e.g., SMOTE) or complex ensemble architectures, these approaches can introduce noise and incur substantial computational overhead without commensurate performance gains. 
+In this paper, we propose a paradigm shift from model complexity to precise \textbf{Feature Engineering}, specifically targeting the re-identification of clients across transactions. 
+We introduce a novel \textbf{Time-Invariant Client Identification} method based on the transformation $D_1^{(\text{inv})} = \text{Day}(t) - D_1$, which corrects for temporal drift in user registration attributes and enables consistent transaction grouping. 
+Extensive experiments on the IEEE-CIS Fraud Detection dataset ($N=590,540$) demonstrate that our feature-centric approach using a single LightGBM model achieves an AUC of \textbf{0.932}, significantly outperforming SMOTE-augmented baselines (AUC=0.908) and matching recent ensemble stacking methods (AUC$\approx$0.918) with $45\times$ faster training.
+A comprehensive ablation study reveals that applying SMOTE to our well-engineered feature space yields only marginal improvement (+0.25\% AUC) while increasing training time by $5\times$---an unfavorable trade-off for production systems requiring frequent model updates. 
+These findings challenge the assumption that synthetic oversampling is universally beneficial and demonstrate that high-quality semantic feature extraction can render such techniques cost-ineffective.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -53,31 +59,39 @@ Fraud Detection, Feature Engineering, Imbalanced Learning, SMOTE, LightGBM, Clie
 \section{Introduction}
 \label{sec:intro}
 
-Why do industrial practitioners consistently outperform academics on fraud detection leaderboards? On the IEEE-CIS Kaggle competition, top solutions rarely employ SMOTE or complex multi-model ensembles---the very techniques that dominate academic literature. Instead, they rely on what practitioners call \textit{Magic Features}: user-centric behavioral aggregations that transform raw transaction data into identity-anchored representations. Despite their empirical success, these techniques remain largely undocumented in formal research, creating a \textbf{gap between industrial practice and academic understanding}.
+Why do industrial practitioners consistently outperform academics on fraud detection leaderboards? 
+On the IEEE-CIS Kaggle competition, top solutions rarely employ SMOTE or complex multi-model ensembles---the very techniques that dominate academic literature. 
+Instead, they rely on what practitioners call \textit{Magic Features}: user-centric behavioral aggregations that transform raw transaction data into identity-anchored representations. 
+Despite their empirical success, these techniques remain largely undocumented in formal research, creating a \textbf{gap between industrial practice and academic understanding}.
 
 This paper bridges that gap by formalizing, analyzing, and systematically evaluating this industrial wisdom.
 
 \subsection{The Problem: Why Traditional Approaches Fall Short}
-The primary challenge in fraud detection is \textit{extreme class imbalance}: fraudulent transactions constitute less than 3.5\% of traffic in the IEEE-CIS dataset. The academic community has responded with two dominant paradigms:
+The primary challenge in fraud detection is \textit{extreme class imbalance}: fraudulent transactions constitute less than 3.5\% of traffic in the IEEE-CIS dataset. 
+The academic community has responded with two dominant paradigms:
 
 \begin{enumerate}
     \item \textbf{Data-level solutions}: SMOTE \cite{chawla2002smote} and variants synthetically balance class distributions.
     \item \textbf{Ensemble-level solutions}: Stacking multiple classifiers (XGBoost, RandomForest, Neural Networks) to stabilize predictions \cite{moradi2025robust}.
 \end{enumerate}
 
-While theoretically motivated, these approaches treat \textit{symptoms} rather than the \textit{root cause}. Synthetic interpolation in high-dimensional spaces often creates noisy samples, while complex ensembles incur prohibitive training and inference costs for real-time deployment.
+While theoretically motivated, these approaches treat \textit{symptoms} rather than the \textit{root cause}. 
+Synthetic interpolation in high-dimensional spaces often creates noisy samples, while complex ensembles incur prohibitive training and inference costs for real-time deployment.
 
 \subsection{The Insight: Stable Identity Enables Behavioral Anchoring}
-We observe that fraud is not an isolated event---it is a \textbf{behavioral anomaly associated with a specific user identity}. If a model can reliably link disparate transactions to a single entity, it can leverage historical aggregates (mean transaction amount, typical location, transaction frequency) to detect deviations with high precision.
+We observe that fraud is not an isolated event---it is a \textbf{behavioral anomaly associated with a specific user identity}. 
+If a model can reliably link disparate transactions to a single entity, it can leverage historical aggregates (mean transaction amount, typical location, transaction frequency) to detect deviations with high precision.
 
-The key obstacle is that user identities are not explicitly provided in transaction data. More critically, features like $D_1$ (``days since client registration'') are \textbf{time-variant}: the same user transacting on different days has different $D_1$ values, breaking identity linkage.
+The key obstacle is that user identities are not explicitly provided in transaction data. 
+More critically, features like $D_1$ (``days since client registration'') are \textbf{time-variant}: the same user transacting on different days has different $D_1$ values, breaking identity linkage.
 
 Our core insight is a simple transformation that recovers \textbf{time-invariant identity anchors}:
 \begin{equation}
 D_1^{(\text{inv})} = \text{Day}(t) - D_1
 \end{equation}
 
-This converts the drifting ``days since registration'' into a fixed ``registration date''---a stable identity signal. Figure~\ref{fig:d1_transform} illustrates this transformation.
+This converts the drifting ``days since registration'' into a fixed ``registration date''---a stable identity signal. 
+Figure~\ref{fig:d1_transform} illustrates this transformation.
 
 \subsection{Our Contributions}
 We make the following contributions, organized along a logical progression from \textit{Problem} $\to$ \textit{Insight} $\to$ \textit{Method} $\to$ \textit{Validation}:
@@ -98,35 +112,49 @@ We make the following contributions, organized along a logical progression from 
 
 \begin{figure}[t]
 \centerline{\includegraphics[width=0.48\textwidth]{../results/d1_transformation.png}}
-\caption{The core insight: (a) Raw $D_1$ is time-variant---Users A and C have identical $D_1$ trajectories despite being different people, causing \textbf{identity confusion}. (b) Our transformation $D_1^{(\text{inv})} = \text{Day}(t) - D_1$ recovers the stable registration day, enabling correct user identification.}
+\caption{The core insight: (a) Raw $D_1$ is time-variant---Users A and C have identical $D_1$ trajectories despite being different people, causing \textbf{identity confusion}. 
+(b) Our transformation $D_1^{(\text{inv})} = \text{Day}(t) - D_1$ recovers the stable registration day, enabling correct user identification.}
 \label{fig:d1_transform}
 \end{figure}
 
 \section{Related Work}
 
 \subsection{Data-level Approaches: Imbalanced Learning}
-Addressing class imbalance remains a central challenge in fraud detection. Sampling-based methods have dominated this space:
+Addressing class imbalance remains a central challenge in fraud detection. 
+Sampling-based methods have dominated this space:
 \begin{itemize}
-    \item \textbf{Oversampling}: SMOTE \cite{chawla2002smote} generates synthetic minority examples via linear interpolation between nearest neighbors. Subsequent variants address its limitations: Borderline-SMOTE \cite{han2005borderline} focuses on decision boundary instances, while ADASYN \cite{he2008adasyn} adaptively weights harder-to-learn examples.
-    \item \textbf{Undersampling}: Random undersampling reduces majority class instances but risks discarding informative samples. Dal Pozzolo et al.\ \cite{pozzolo2015calibrating} propose calibrated undersampling to mitigate probability distortion.
+    \item \textbf{Oversampling}: SMOTE \cite{chawla2002smote} generates synthetic minority examples via linear interpolation between nearest neighbors. 
+    Subsequent variants address its limitations: Borderline-SMOTE \cite{han2005borderline} focuses on decision boundary instances, while ADASYN \cite{he2008adasyn} adaptively weights harder-to-learn examples.
+    \item \textbf{Undersampling}: Random undersampling reduces majority class instances but risks discarding informative samples. 
+    Dal Pozzolo et al.\ \cite{pozzolo2015calibrating} propose calibrated undersampling to mitigate probability distortion.
     \item \textbf{Generative Methods}: Douzas and Bacao \cite{douzas2018gan} introduce conditional GANs for synthetic minority generation, producing more realistic samples than geometric interpolation.
 \end{itemize}
 Despite their popularity, these techniques exhibit diminishing returns on high-dimensional datasets where the minority class does not form compact, convex regions \cite{moradi2025robust}.
 
 \subsection{Ensemble-level Approaches}
-Model ensembling represents another strategy for handling difficult classification tasks. Moradi et al.\ \cite{moradi2025robust, moradi2025ensemble} employ a multi-stage stacking architecture combining XGBoost, LightGBM, and CatBoost base learners with a logistic regression meta-model. While achieving AUC scores around 0.918 on the IEEE-CIS benchmark, such approaches entail significant complexity: training three distinct gradient boosting models, managing prediction pipelines, and tuning across multiple model configurations. Our work questions whether this architectural overhead is justified when compared to simpler alternatives with stronger feature representations.
+Model ensembling represents another strategy for handling difficult classification tasks. 
+Moradi et al.\ \cite{moradi2025robust, moradi2025ensemble} employ a multi-stage stacking architecture combining XGBoost, LightGBM, and CatBoost base learners with a logistic regression meta-model. 
+While achieving AUC scores around 0.918 on the IEEE-CIS benchmark, such approaches entail significant complexity: training three distinct gradient boosting models, managing prediction pipelines, and tuning across multiple model configurations. 
+Our work questions whether this architectural overhead is justified when compared to simpler alternatives with stronger feature representations.
 
 \subsection{Feature-level Approaches: Client Identification}
-Industrial fraud detection systems often prioritize feature engineering over model complexity. The IEEE-CIS competition \cite{ieeecis2019} revealed that top-performing solutions relied heavily on inferred client identities and behavioral aggregations---features colloquially termed ``magic features'' by practitioners. Our work provides a formal treatment of this approach, framing client identification as a manifold learning problem where semantically related transactions are mapped to a common user representation.
+Industrial fraud detection systems often prioritize feature engineering over model complexity. 
+The IEEE-CIS competition \cite{ieeecis2019} revealed that top-performing solutions relied heavily on inferred client identities and behavioral aggregations---features colloquially termed ``magic features'' by practitioners. 
+Our work provides a formal treatment of this approach, framing client identification as a manifold learning problem where semantically related transactions are mapped to a common user representation.
 
 \subsection{Emerging Trends: Explainability and Graph Methods}
-Two emerging directions merit attention. First, Explainable AI methods---particularly SHAP \cite{lundberg2017shap}---have become essential for regulatory compliance and model debugging. Unlike post-hoc explanations of opaque ensembles, our engineered features offer inherent interpretability: deviation from user-specific norms directly translates to fraud risk. Second, Graph Neural Networks \cite{liu2021gnn_fraud} model transaction networks to capture relational patterns (e.g., shared merchants, linked accounts). While promising, GNNs face scalability challenges on dynamic transaction graphs with millions of daily edges.
+Two emerging directions merit attention. 
+First, Explainable AI methods---particularly SHAP \cite{lundberg2017shap}---have become essential for regulatory compliance and model debugging. Unlike post-hoc explanations of opaque ensembles, 
+our engineered features offer inherent interpretability: deviation from user-specific norms directly translates to fraud risk. 
+Second, Graph Neural Networks \cite{liu2021gnn_fraud} model transaction networks to capture relational patterns (e.g., shared merchants, linked accounts). 
+While promising, GNNs face scalability challenges on dynamic transaction graphs with millions of daily edges.
 
 
 \section{Theoretical Background}
 
 \subsection{Gradient Boosting Decision Trees}
-Gradient Boosting Decision Trees (GBDT) are an ensemble learning method that trains a sequence of weak learners (typically decision trees) to minimize a regularized objective function. At iteration $t$, the model $F_t$ is updated as:
+Gradient Boosting Decision Trees (GBDT) are an ensemble learning method that trains a sequence of weak learners (typically decision trees) to minimize a regularized objective function. 
+At iteration $t$, the model $F_t$ is updated as:
 \begin{equation}
 F_t(x) = F_{t-1}(x) + \eta h_t(x)
 \end{equation}
@@ -157,13 +185,16 @@ The IEEE-CIS dataset exhibits several characteristics typical of financial fraud
 Figure \ref{fig:eda} (in Experiment section) illustrates the transaction volume over time, showing periodic weekly patterns which we exploit via \texttt{day\_of\_week} features.
 
 \subsection{Problem Formulation}
-Let $D = \{(x_i, y_i)\}_{i=1}^N$ be a dataset of $N$ transactions, where $x_i \in \mathbb{R}^d$ is the feature vector and $y_i \in \{0, 1\}$ is the label (1 for fraud). The dataset is time-ordered by $t_i$. The objective is to learn a function $f(x)$ that maximizes the Area Under the ROC Curve (AUC) on future transactions $D_{test} = \{(x_j, y_j) | t_j > \max(t_i)\}$.
+Let $D = \{(x_i, y_i)\}_{i=1}^N$ be a dataset of $N$ transactions, where $x_i \in \mathbb{R}^d$ is the feature vector and $y_i \in \{0, 1\}$ is the label (1 for fraud). 
+The dataset is time-ordered by $t_i$. The objective is to learn a function $f(x)$ that maximizes the Area Under the ROC Curve (AUC) on future transactions $D_{test} = \{(x_j, y_j) | t_j > \max(t_i)\}$.
 
 
 \subsection{Feature Engineering Framework}
 
 \subsubsection{Time-Invariant Client Identification}
-A core challenge in the IEEE-CIS dataset is that user identities are not provided explicitly; they must be inferred from transaction attributes. Let $u_i \in \mathcal{U}$ denote the latent user identity for transaction $i$. Our objective is to construct a mapping function $\Phi: \mathbb{R}^d \rightarrow \mathcal{U}$ such that $\Phi(\mathbf{x}_i) = \Phi(\mathbf{x}_j) \iff u_i = u_j$.
+A core challenge in the IEEE-CIS dataset is that user identities are not provided explicitly; 
+they must be inferred from transaction attributes. Let $u_i \in \mathcal{U}$ denote the latent user identity for transaction $i$. 
+Our objective is to construct a mapping function $\Phi: \mathbb{R}^d \rightarrow \mathcal{U}$ such that $\Phi(\mathbf{x}_i) = \Phi(\mathbf{x}_j) \iff u_i = u_j$.
 
 A critical feature in the dataset is $D_1$, representing ``days since client registration.'' However, $D_1$ is inherently time-variant: for a user $u$ transacting at times $t_a$ and $t_b$, the corresponding $D_1$ values differ by $\Delta t = t_b - t_a$. Formally:
 \begin{equation}
@@ -175,7 +206,8 @@ We propose a \textbf{time-invariant transformation} that normalizes $D_1$ to a f
 \label{eq:d1_transform}
 D_1^{(\text{inv})} = \text{Day}(t) - D_1
 \end{equation}
-where $D_1^{(\text{inv})}$ represents the user's absolute ``registration day'' relative to dataset origin. This value remains constant across all transactions from the same user.
+where $D_1^{(\text{inv})}$ represents the user's absolute ``registration day'' relative to dataset origin. 
+This value remains constant across all transactions from the same user.
 
 Our final UID is constructed as a composite key combining orthogonal identity signals:
 \begin{equation}
@@ -214,7 +246,8 @@ $\mathcal{G} \gets \texttt{GroupBy}(\mathcal{D}, \text{UID})$\;
 \end{algorithm}
 
 \subsubsection{User-Centric Feature Aggregation}
-The aggregated features serve as a form of manifold learning. By grouping transactions by UID, we define a local neighborhood $S_u \subset \mathcal{D}$. For a numeric feature $x^{(k)}$ (e.g., transaction amount), we compute:
+The aggregated features serve as a form of manifold learning. 
+By grouping transactions by UID, we define a local neighborhood $S_u \subset \mathcal{D}$. For a numeric feature $x^{(k)}$ (e.g., transaction amount), we compute:
 \begin{equation}
 \mu_{u}^{(k)} = \frac{1}{|S_u|} \sum_{j \in S_u} x_j^{(k)}, \quad \sigma_{u}^{(k)} = \sqrt{\frac{1}{|S_u|} \sum_{j \in S_u} (x_j^{(k)} - \mu_{u}^{(k)})^2}
 \end{equation}
@@ -224,7 +257,8 @@ The current transaction is then normalized into this user-specific coordinate sy
 \label{eq:znorm}
 z^{(k)} = \frac{x^{(k)} - \mu_{u}^{(k)}}{\sigma_{u}^{(k)} + \epsilon}
 \end{equation}
-where $\epsilon = 10^{-8}$ prevents division by zero. This $z$-score explicitly encodes behavioral deviation: a transaction amount of \$500 may be unremarkable globally (population mean $\approx$\$135) but highly anomalous for a user with historical mean of \$50. Such re-contextualization effectively linearizes the fraud detection manifold for tree-based learners.
+where $\epsilon = 10^{-8}$ prevents division by zero. This $z$-score explicitly encodes behavioral deviation: a transaction amount of \$500 may be unremarkable globally (population mean $\approx$\$135) but highly anomalous for a user with historical mean of \$50. 
+Such re-contextualization effectively linearizes the fraud detection manifold for tree-based learners.
 
 \subsubsection{Theoretical Properties of UID Aggregation}
 We now establish theoretical guarantees for the proposed feature aggregation framework.
@@ -242,7 +276,8 @@ This result implies that aggregation features become increasingly reliable as mo
 \end{equation}
 \textit{whenever} $\text{Var}(\mu_u) > 0$.
 
-\textit{Proof sketch.} By the law of total variance, $\text{Var}(x) = \mathbb{E}[\text{Var}(x|u)] + \text{Var}(\mathbb{E}[x|u])$. User-specific normalization eliminates the between-user variance term $\text{Var}(\mathbb{E}[x|u])$, yielding strictly smaller total variance when users exhibit distinct behavioral patterns. \hfill $\square$
+\textit{Proof sketch.} By the law of total variance, $\text{Var}(x) = \mathbb{E}[\text{Var}(x|u)] + \text{Var}(\mathbb{E}[x|u])$. 
+User-specific normalization eliminates the between-user variance term $\text{Var}(\mathbb{E}[x|u])$, yielding strictly smaller total variance when users exhibit distinct behavioral patterns. \hfill $\square$
 
 \textbf{Theorem 1 (Sample Complexity).} \textit{To estimate $\mu_u^{(k)}$ within error $\epsilon$ with probability at least $1-\delta$, the minimum number of transactions required is:}
 \begin{equation}
@@ -276,7 +311,8 @@ This approach allows LightGBM to focus on the hardest examples (fraud) while mai
 We implement our models using Python 3.10.
 \begin{itemize}
     \item \textbf{Baseline (XGBoost)}: We utilize \texttt{xgboost} v1.7. Parameters: \texttt{n\_estimators=500}, \texttt{max\_depth=9}, \texttt{learning\_rate=0.05}, \texttt{subsample=0.9}. SMOTE is applied to the training fold only to prevent leakage.
-    \item \textbf{Proposed (LightGBM)}: We utilize \texttt{lightgbm} v4.0. Parameters: \texttt{num\_leaves=256}, \texttt{learning\_rate=0.02}, \texttt{feature\_fraction=0.7}. We use the native \texttt{is\_unbalance=True} parameter to handle improper weighting, avoiding the noise injection of SMOTE. The model is trained for up to 2000 rounds with early stopping.
+    \item \textbf{Proposed (LightGBM)}: We utilize \texttt{lightgbm} v4.0. Parameters: \texttt{num\_leaves=256}, \texttt{learning\_rate=0.02}, \texttt{feature\_fraction=0.7}. 
+    We use the native \texttt{is\_unbalance=True} parameter to handle improper weighting, avoiding the noise injection of SMOTE. The model is trained for up to 2000 rounds with early stopping.
 \end{itemize}
 
 \subsection{Datasets and Preprocessing}
@@ -298,7 +334,10 @@ We compare against a strong academic baseline:
 \subsection{Results and Analysis}
 
 \subsubsection{Exploratory Data Analysis}
-Figure \ref{fig:eda} displays the distribution of transactions over time. We observe distinct periodic patterns corresponding to daily and weekly cycles. This motivates our use of time-based features (e.g., \texttt{hour}, \texttt{day}) in the feature engineering pipeline. The proposed time-invariant UID ($D1_n$) effectively normalizes these timestamps relative to the user's start time, allowing the model to learn user-specific periodicities.
+Figure \ref{fig:eda} displays the distribution of transactions over time.
+We observe distinct periodic patterns corresponding to daily and weekly cycles. 
+This motivates our use of time-based features (e.g., \texttt{hour}, \texttt{day}) in the feature engineering pipeline. 
+The proposed time-invariant UID ($D1_n$) effectively normalizes these timestamps relative to the user's start time, allowing the model to learn user-specific periodicities.
 
 \begin{figure}[htbp]
 \centerline{\includegraphics[width=0.48\textwidth]{../results/eda_transaction_dt.png}}
@@ -326,10 +365,12 @@ Ensemble Stacking \cite{moradi2025ensemble} & 0.918 & --- & Stratified K-Fold* \
 {\small *Note: Reference \cite{moradi2025ensemble} uses Stratified K-Fold which may leak future information. Our Time-Series split is more rigorous.}
 \end{table}
 
-Our proposed method achieves a \textbf{2.6\% relative improvement} in AUC over the XGBoost baseline (0.932 vs. 0.908) and outperforms the complex stacking ensemble reported in recent literature. This result validates our hypothesis that precise client identification through the time-invariant UID transformation is more effective than synthetic data augmentation.
+Our proposed method achieves a \textbf{2.6\% relative improvement} in AUC over the XGBoost baseline (0.932 vs. 0.908) and outperforms the complex stacking ensemble reported in recent literature. 
+This result validates our hypothesis that precise client identification through the time-invariant UID transformation is more effective than synthetic data augmentation.
 
 \subsubsection{Comparative Analysis with State-of-the-Art}
-We explicitly compare our proposed Feature Engineering approach with the recent "Robust Ensemble Stacking" method proposed by Moradi et al. \cite{moradi2025robust, moradi2025ensemble} on the same IEEE-CIS dataset. Table \ref{tab:comparison_sota} highlights the structural differences.
+We explicitly compare our proposed Feature Engineering approach with the recent "Robust Ensemble Stacking" method proposed by Moradi et al. 
+\cite{moradi2025robust, moradi2025ensemble} on the same IEEE-CIS dataset. Table \ref{tab:comparison_sota} highlights the structural differences.
 
 \begin{table}[htbp]
 \caption{Comparison with Recent SOTA (Moradi et al. 2025)}
@@ -350,10 +391,17 @@ We explicitly compare our proposed Feature Engineering approach with the recent 
 \end{center}
 \end{table}
 
-The most striking finding is the \textbf{efficiency gap}. While Moradi et al. achieve a respectable 0.918 AUC, they require training and checking three distinct heavy GBDT models plus a meta-learner. They also heavily rely on synthetic data generation (SMOTE), which expands the training set size and computational cost. In contrast, our approach achieves a superior 0.932 AUC using a single model trained in seconds. This validates our core hypothesis: \textit{Better features beat complex architectures.}
+The most striking finding is the \textbf{efficiency gap}. 
+While Moradi et al. achieve a respectable 0.918 AUC, they require training and checking three distinct heavy GBDT models plus a meta-learner. 
+They also heavily rely on synthetic data generation (SMOTE), which expands the training set size and computational cost. 
+In contrast, our approach achieves a superior 0.932 AUC using a single model trained in seconds. 
+This validates our core hypothesis: \textit{Better features beat complex architectures.}
 
 \subsubsection{Feature Importance Analysis}
-To understand the drivers behind model performance, we analyze feature importance by information gain. Figure~\ref{fig:imp} displays the top 15 features. The aggregated features derived from UID construction (e.g., \texttt{TransactionAmt\_mean\_by\_uid}, \texttt{TransactionAmt\_std\_by\_uid}) rank among the most influential predictors. This result supports our hypothesis that establishing user-specific behavioral baselines is essential for detecting anomalous transactions.
+To understand the drivers behind model performance, we analyze feature importance by information gain. 
+Figure~\ref{fig:imp} displays the top 15 features. 
+The aggregated features derived from UID construction (e.g., \texttt{TransactionAmt\_mean\_by\_uid}, \texttt{TransactionAmt\_std\_by\_uid}) rank among the most influential predictors. 
+This result supports our hypothesis that establishing user-specific behavioral baselines is essential for detecting anomalous transactions.
 
 \begin{figure}[htbp]
 \centerline{\includegraphics[width=0.48\textwidth]{../results/feature_importance.png}}
@@ -362,8 +410,11 @@ To understand the drivers behind model performance, we analyze feature importanc
 \end{figure}
 
 \subsubsection{Model Interpretability (SHAP)}
-To move beyond global feature importance, we analyze SHAP (SHapley Additive exPlanations) values to understand how features influence individual predictions. Figure \ref{fig:shap} presents the SHAP summary plot. The color represents the feature value (red = high, blue = low).
-We observe that for our engineered features like \texttt{TransactionAmt\_mean\_by\_uid}, high values (red deviations) have a strong positive impact on the model output (pushing towards Fraud). This visually confirms our anomaly detection hypothesis: users behaving "normally" (values near mean) have low SHAP values, while those deviating significantly push the model to predict fraud. This level of granularity is often lost in ensemble stacking black-boxes.
+To move beyond global feature importance, we analyze SHAP (SHapley Additive exPlanations) values to understand how features influence individual predictions. 
+Figure \ref{fig:shap} presents the SHAP summary plot. The color represents the feature value (red = high, blue = low).
+We observe that for our engineered features like \texttt{TransactionAmt\_mean\_by\_uid}, high values (red deviations) have a strong positive impact on the model output (pushing towards Fraud). 
+This visually confirms our anomaly detection hypothesis: users behaving "normally" (values near mean) have low SHAP values, while those deviating significantly push the model to predict fraud. 
+This level of granularity is often lost in ensemble stacking black-boxes.
 
 \begin{figure}[htbp]
 \centerline{\includegraphics[width=0.48\textwidth]{../results/shap_summary.png}}
@@ -372,7 +423,8 @@ We observe that for our engineered features like \texttt{TransactionAmt\_mean\_b
 \end{figure}
 
 \subsection{Ablation Study: Is SMOTE Worth the Cost?}
-To isolate the impact of synthetic oversampling, we conducted an ablation study where SMOTE was applied to the dataset \textit{after} generating our UID-based features. Table~\ref{tab:ablation} presents the results.
+To isolate the impact of synthetic oversampling, we conducted an ablation study where SMOTE was applied to the dataset \textit{after} generating our UID-based features. 
+Table~\ref{tab:ablation} presents the results.
 
 \begin{table}[htbp]
 \caption{Ablation Study: SMOTE on Well-Engineered Features}
@@ -391,9 +443,12 @@ SOTA + SMOTE & \textbf{0.9346} & \textbf{0.621} & \SI{328}{\second} \\
 \end{center}
 \end{table}
 
-The results reveal a nuanced trade-off. \textbf{SMOTE does provide a marginal improvement} in AUC (0.9322 $\rightarrow$ 0.9346, +0.25\%) and a more substantial gain in Average Precision (+5.6\%). However, this comes at a significant computational cost: training time increases by nearly $5\times$ (from \SI{67}{\second} to \SI{328}{\second}) due to the $k$-NN search overhead in SMOTE and the doubled training set size (442K $\rightarrow$ 855K samples).
+The results reveal a nuanced trade-off. 
+\textbf{SMOTE does provide a marginal improvement} in AUC (0.9322 $\rightarrow$ 0.9346, +0.25\%) and a more substantial gain in Average Precision (+5.6\%). 
+However, this comes at a significant computational cost: training time increases by nearly $5\times$ (from \SI{67}{\second} to \SI{328}{\second}) due to the $k$-NN search overhead in SMOTE and the doubled training set size (442K $\rightarrow$ 855K samples).
 
-For real-time fraud detection systems operating under strict latency and throughput constraints, this trade-off is unfavorable. A 0.25\% AUC improvement does not justify a $5\times$ increase in training cost, especially when model retraining occurs frequently to adapt to evolving fraud patterns.
+For real-time fraud detection systems operating under strict latency and throughput constraints, this trade-off is unfavorable. 
+A 0.25\% AUC improvement does not justify a $5\times$ increase in training cost, especially when model retraining occurs frequently to adapt to evolving fraud patterns.
 
 \begin{figure}[htbp]
 \centerline{\includegraphics[width=0.45\textwidth]{../results/roc_comparison_final.png}}
@@ -401,13 +456,17 @@ For real-time fraud detection systems operating under strict latency and through
 \label{fig:roc}
 \end{figure}
 
-This result suggests that when the feature space is well-constructed (i.e., different users are well-separated), the "borderline" examples that SMOTE tries to populate are either nonexistent or better handled by the model's native reweighting. Synthetic samples in this scenario likely act as noise.
+This result suggests that when the feature space is well-constructed (i.e., different users are well-separated), the "borderline" examples that SMOTE tries to populate are either nonexistent or better handled by the model's native reweighting. 
+Synthetic samples in this scenario likely act as noise.
 
 \subsection{Robustness Analysis}
 
 \subsubsection{Temporal Stability}
-In fraud detection, concept drift is inevitable as fraudsters adapt. To evaluate the temporal robustness of our model, we split the validation set into three chronological "chunks" (simulating Month 1, Month 2, Month 3) and evaluated the AUC on each.
-Figure \ref{fig:robustness} shows the trend. While there is a natural decay from 0.89 to 0.82 due to drift, the model maintains a strong detection capability >0.82. This suggests that while feature drift occurs, the core \textit{behavioral} anomalies captured by our UID features remain predictive.
+In fraud detection, concept drift is inevitable as fraudsters adapt. 
+To evaluate the temporal robustness of our model, we split the validation set into three chronological "chunks" (simulating Month 1, Month 2, Month 3) and evaluated the AUC on each.
+Figure \ref{fig:robustness} shows the trend. 
+While there is a natural decay from 0.89 to 0.82 due to drift, the model maintains a strong detection capability >0.82. 
+This suggests that while feature drift occurs, the core \textit{behavioral} anomalies captured by our UID features remain predictive.
 
 \begin{figure}[htbp]
 \centerline{\includegraphics[width=0.48\textwidth]{../results/robustness_temporal.png}}
@@ -416,7 +475,9 @@ Figure \ref{fig:robustness} shows the trend. While there is a natural decay from
 \end{figure}
 
 \subsubsection{Hyperparameter Sensitivity}
-We further investigated the sensitivity of our model to complexity (controlled by \texttt{num\_leaves}). Figure \ref{fig:sensitivity} illustrates that smaller trees (\texttt{num\_leaves=32}) actually outperform larger ones (\texttt{num\_leaves=256}) in low-data regimes (simulated experimental subset). This finding is crucial: ``SOTA'' doesn't always mean ``Max Complexity''. Simpler models generalize better and are less prone to overfitting noise.
+We further investigated the sensitivity of our model to complexity (controlled by \texttt{num\_leaves}). 
+Figure \ref{fig:sensitivity} illustrates that smaller trees (\texttt{num\_leaves=32}) actually outperform larger ones (\texttt{num\_leaves=256}) in low-data regimes (simulated experimental subset). 
+This finding is crucial: ``SOTA'' doesn't always mean ``Max Complexity''. Simpler models generalize better and are less prone to overfitting noise.
 
 \begin{figure}[htbp]
 \centerline{\includegraphics[width=0.48\textwidth]{../results/sensitivity_leaves.png}}
@@ -425,7 +486,8 @@ We further investigated the sensitivity of our model to complexity (controlled b
 \end{figure}
 
 \subsubsection{Data Efficiency}
-To understand how our method scales with varying amounts of training data, we conducted experiments with progressively larger subsets of the IEEE-CIS dataset. Table~\ref{tab:data_efficiency} presents the results.
+To understand how our method scales with varying amounts of training data, we conducted experiments with progressively larger subsets of the IEEE-CIS dataset. 
+Table~\ref{tab:data_efficiency} presents the results.
 
 \begin{table}[htbp]
 \caption{Data Efficiency: Performance vs. Training Data Size}
@@ -444,7 +506,8 @@ To understand how our method scales with varying amounts of training data, we co
 \end{center}
 \end{table}
 
-The results reveal an important insight: even with only 50,000 samples (8.5\% of the full dataset), our method achieves an AUC of 0.908---already competitive with SMOTE-based baselines trained on the full data. This sub-linear scaling behavior suggests that the UID-based features enable efficient learning by providing strong inductive bias, reducing the data requirements for effective fraud detection.
+The results reveal an important insight: even with only 50,000 samples (8.5\% of the full dataset), our method achieves an AUC of 0.908---already competitive with SMOTE-based baselines trained on the full data. 
+This sub-linear scaling behavior suggests that the UID-based features enable efficient learning by providing strong inductive bias, reducing the data requirements for effective fraud detection.
 
 \subsection{Case Study: Anatomy of a Fraud}
 To illustrate the efficacy of our method, we examine a specific fraudulent transaction (ID 3000214) that was caught by our model but missed by the baseline.
@@ -465,11 +528,14 @@ This example highlights that without grouping by a stable UID, the semantic "abn
 Our experimental results challenge prevailing assumptions in fraud detection research, which increasingly favors complex deep learning architectures (GNNs, Transformers) and sophisticated sampling strategies (GAN-based synthesis). Three key insights emerge from our analysis:
 
 \begin{enumerate}
-    \item \textbf{Simplicity over Complexity}: A carefully tuned single LightGBM model with engineered features outperforms multi-model stacking ensembles. This suggests that architectural complexity provides diminishing returns when the input representation is suboptimal.
+    \item \textbf{Simplicity over Complexity}: A carefully tuned single LightGBM model with engineered features outperforms multi-model stacking ensembles. 
+    This suggests that architectural complexity provides diminishing returns when the input representation is suboptimal.
     
-    \item \textbf{Features over Augmentation}: Synthetic minority oversampling degrades performance when applied to a well-structured feature space. This indicates that SMOTE's interpolation assumption---that the minority class forms convex regions in feature space---does not hold for fraud detection with proper client identification.
+    \item \textbf{Features over Augmentation}: Synthetic minority oversampling degrades performance when applied to a well-structured feature space. 
+    This indicates that SMOTE's interpolation assumption---that the minority class forms convex regions in feature space---does not hold for fraud detection with proper client identification.
     
-    \item \textbf{Deployment Considerations}: Our approach achieves \SI{40}{\milli\second} inference latency on CPU hardware, meeting real-time requirements for transaction processing. In contrast, GNN-based methods typically require \SIrange{200}{500}{\milli\second} and GPU infrastructure.
+    \item \textbf{Deployment Considerations}: Our approach achieves \SI{40}{\milli\second} inference latency on CPU hardware, meeting real-time requirements for transaction processing. 
+    In contrast, GNN-based methods typically require \SIrange{200}{500}{\milli\second} and GPU infrastructure.
 \end{enumerate}
 
 \section{Limitations and Future Work}
@@ -477,22 +543,37 @@ Our experimental results challenge prevailing assumptions in fraud detection res
 
 While our proposed approach demonstrates strong empirical performance, several limitations warrant acknowledgment:
 
-\textbf{Dataset Constraints.} Our evaluation relies exclusively on the IEEE-CIS dataset. Although this benchmark is widely adopted in the research community, it may not fully represent the diversity of fraud patterns across different payment ecosystems (e.g., mobile payments, cryptocurrency transactions). Cross-dataset validation remains an important direction for future work.
+\textbf{Dataset Constraints.} Our evaluation relies exclusively on the IEEE-CIS dataset. 
+Although this benchmark is widely adopted in the research community, it may not fully represent the diversity of fraud patterns across different payment ecosystems (e.g., mobile payments, cryptocurrency transactions). 
+Cross-dataset validation remains an important direction for future work.
 
-\textbf{UID Construction Assumptions.} The time-invariant UID formulation (Eq.~\ref{eq:uid}) assumes that users do not change their email domain or primary card during the observation period. In practice, legitimate users may update payment methods, potentially fragmenting their transaction history across multiple inferred identities. Fuzzy matching or probabilistic entity resolution could address this limitation.
+\textbf{UID Construction Assumptions.} The time-invariant UID formulation (Eq.~\ref{eq:uid}) assumes that users do not change their email domain or primary card during the observation period. 
+In practice, legitimate users may update payment methods, potentially fragmenting their transaction history across multiple inferred identities. 
+Fuzzy matching or probabilistic entity resolution could address this limitation.
 
-\textbf{Static Feature Engineering.} Our aggregation features are computed over the entire training history, which may not capture short-term behavioral shifts. Incorporating temporal windowing (e.g., 7-day, 30-day rolling statistics) could improve detection of newly compromised accounts.
+\textbf{Static Feature Engineering.} Our aggregation features are computed over the entire training history, which may not capture short-term behavioral shifts. 
+Incorporating temporal windowing (e.g., 7-day, 30-day rolling statistics) could improve detection of newly compromised accounts.
 
-\textbf{Lack of Graph-Based Features.} While we outperform existing GNN approaches in this benchmark, we do not model explicit transaction networks. Transactions linked through shared merchants, IP addresses, or device fingerprints may exhibit detectable patterns that our current framework does not exploit.
+\textbf{Lack of Graph-Based Features.} While we outperform existing GNN approaches in this benchmark, we do not model explicit transaction networks. 
+Transactions linked through shared merchants, IP addresses, or device fingerprints may exhibit detectable patterns that our current framework does not exploit.
 
-\textbf{Future Directions.} We identify three promising research directions: (1) integrating the UID framework with lightweight graph features extracted via random walk embeddings; (2) developing online learning variants that update user statistics incrementally; and (3) extending the methodology to multi-class fraud type classification.
+\textbf{Future Directions.} We identify three promising research directions: (1) integrating the UID framework with lightweight graph features extracted via random walk embeddings; 
+(2) developing online learning variants that update user statistics incrementally; and (3) extending the methodology to multi-class fraud type classification.
 
 \section{Conclusion}
-This paper demonstrates that precise feature engineering---specifically, time-invariant client identification via the transformation $D_1^{(\text{inv})} = \text{Day}(t) - D_1$---provides a highly effective approach to fraud detection that rivals or exceeds complex ensemble architectures. By normalizing temporal drift in user registration attributes and computing user-centric behavioral statistics, our single LightGBM model achieves an AUC of 0.932 on the IEEE-CIS benchmark, outperforming SMOTE-augmented XGBoost baselines (AUC=0.908) and matching multi-model stacking ensembles (AUC$\approx$0.918) while requiring only 67 seconds of training time.
+This paper demonstrates that precise feature engineering---
+specifically, time-invariant client identification via the transformation $D_1^{(\text{inv})} = \text{Day}(t) - D_1$---
+provides a highly effective approach to fraud detection that rivals or exceeds complex ensemble architectures. 
+By normalizing temporal drift in user registration attributes and computing user-centric behavioral statistics, our single LightGBM model achieves an AUC of 0.932 on the IEEE-CIS benchmark, 
+outperforming SMOTE-augmented XGBoost baselines (AUC=0.908) and matching multi-model stacking ensembles (AUC$\approx$0.918) while requiring only 67 seconds of training time.
 
-Our ablation study reveals an important practical insight: applying SMOTE to a well-engineered feature space yields only marginal improvement (+0.25\% AUC) at disproportionate computational cost ($5\times$ training overhead). For production fraud detection systems that require frequent model retraining to adapt to evolving attack patterns, this trade-off is unjustifiable. These findings suggest that the fraud detection community should critically evaluate the cost-benefit ratio of oversampling techniques, particularly when high-quality semantic features are available.
+Our ablation study reveals an important practical insight: applying SMOTE to a well-engineered feature space yields only marginal improvement (+0.25\% AUC) at disproportionate computational cost ($5\times$ training overhead). 
+For production fraud detection systems that require frequent model retraining to adapt to evolving attack patterns, this trade-off is unjustifiable. 
+These findings suggest that the fraud detection community should critically evaluate the cost-benefit ratio of oversampling techniques, particularly when high-quality semantic features are available.
 
-The practical implications extend beyond benchmark performance. Our single-model approach achieves sub-\SI{50}{\milli\second} inference latency on CPU hardware, making it suitable for real-time transaction scoring where latency budgets are tight. Furthermore, the interpretable nature of our engineered features---which directly encode deviations from user-specific behavioral norms---facilitates model debugging and regulatory compliance.
+The practical implications extend beyond benchmark performance. 
+Our single-model approach achieves sub-\SI{50}{\milli\second} inference latency on CPU hardware, making it suitable for real-time transaction scoring where latency budgets are tight. 
+Furthermore, the interpretable nature of our engineered features---which directly encode deviations from user-specific behavioral norms---facilitates model debugging and regulatory compliance.
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}
